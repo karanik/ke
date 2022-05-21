@@ -5,36 +5,29 @@ use crossterm::{cursor, event, execute, terminal};
 use std::io::stdout;
 use std::str::FromStr;
 use std::time::Duration;
-//use std::fs::read_to_string;
 use std::io::prelude::*;
 
-    struct CleanUp;
+struct CleanUp;
 impl Drop for CleanUp {
     fn drop(&mut self) {
         terminal::disable_raw_mode().expect("Could not disable raw mode")
     }
 }
 
-fn clear_screen() -> Result<()> {
-    execute!(stdout(), terminal::Clear(ClearType::All))?;
-    execute!(stdout(), cursor::MoveTo(0, 0))?;
-    Ok(())
-}
-
-struct Cursor {
-    x: u32,
-    y: u32,
+struct Point {
+    pub x: u32,
+    pub y: u32,
 }
 
 struct EditBuffer {
-    lines : Vec<String> 
+    lines: Vec<String>,
 }
 
 impl EditBuffer {
     pub fn new() -> EditBuffer {
         EditBuffer { lines: Vec::new() }
     }
-    pub fn load(&mut self, path : &str) -> Result<()> {
+    pub fn load(&mut self, path: &str) -> Result<()> {
         self.lines.clear();
         let mut f = std::fs::File::open(path)?;
         let mut buffer = String::new();
@@ -47,27 +40,24 @@ impl EditBuffer {
     }
 }
 
-
 struct Editor {
     exit: bool,
-    width : u16,
-    height : u16,
-    viewOffsetX : u32,
-    viewOfssetY : u32,
-    buffer : EditBuffer,
-//    cursor: Cursor,
+    width: u16,
+    height: u16,
+    buffer: EditBuffer,
+    viewOffset: Point,
+    cursor: Point,
 }
 
 impl Editor {
     pub fn new() -> Result<Editor> {
         Ok(Editor {
             exit: false,
-            width : 0,
-            height : 0,
-            viewOffsetX : 0,
-            viewOfssetY : 0,
-            buffer : EditBuffer::new(),
-  //          cursor: Cursor { x: 0, y: 0 },
+            width: 0,
+            height: 0,
+            buffer: EditBuffer::new(),
+            viewOffset: Point { x: 0, y: 0 },
+            cursor: Point { x: 0, y: 0 },
         })
     }
 
@@ -82,13 +72,16 @@ impl Editor {
         Ok(())
     }
     pub fn on_idle(&mut self) {
-      //  println!("No input yet\r");
+        //  println!("No input yet\r");
     }
 
-    pub fn on_resize(&mut self, new_width : u16, new_height : u16) {
+    pub fn on_resize(&mut self, new_width: u16, new_height: u16) {
         self.width = new_width;
         self.height = new_height;
     }
+
+    //fn buffer_to_view(bufferPoint : Point) -> Option<Point> {
+    //}
 
     fn draw(&self) -> Result<()> {
         // Clear screen
@@ -96,28 +89,27 @@ impl Editor {
         execute!(stdout(), cursor::MoveTo(0, 0))?;
 
         for y in 0..self.height {
-            let buffer_y = (self.viewOfssetY + y as u32) as usize;
-            let bline  = if buffer_y < self.buffer.lines.len() {
+            let buffer_y = (self.viewOffset.y + y as u32) as usize;
+            let bline = if buffer_y < self.buffer.lines.len() {
                 self.buffer.lines[buffer_y].clone()
             } else {
                 String::new()
             };
             for x in 0..self.width {
                 execute!(stdout(), cursor::MoveTo(x, y))?;
-                let buffer_x = (self.viewOffsetX + x as u32) as usize;
+                let buffer_x = (self.viewOffset.x + x as u32) as usize;
                 let outc = if buffer_x < bline.len() {
                     bline.chars().nth(buffer_x).unwrap()
                 } else {
-                   ' '
+                    ' '
                 };
                 print!("{}", outc);
             }
         }
 
         // Draw status
-        execute!(stdout(), cursor::MoveTo(0, self.height-1))?;
+        execute!(stdout(), cursor::MoveTo(0, self.height - 1))?;
         print!("Status bar");
-
 
         execute!(stdout(), cursor::MoveTo(0, 0))?;
         Ok(())
@@ -157,7 +149,9 @@ fn main() -> anyhow::Result<()> {
     let _clean_up = CleanUp;
     terminal::enable_raw_mode()?; /* modify */
     let mut editor = Editor::new()?;
-    editor.buffer.load("/Users/kostas/rs/github/rstenduke/src/tenduke.rs")?;
+    editor
+        .buffer
+        .load("/Users/kostas/rs/github/rstenduke/src/tenduke.rs")?;
     editor.run_loop()?;
     Ok(())
 }
