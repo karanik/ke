@@ -76,13 +76,13 @@ impl Editor {
         })
     }
 
-    pub fn move_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
+    pub fn set_cursor(&mut self, x: usize, y: usize) -> Result<bool> {
         let new_y = std::cmp::max(
             0,
-            std::cmp::min(self.cursor.y as i32 + y, self.buffer.num_lines() as i32 -1),
+            std::cmp::min(y, self.buffer.num_lines() -1),
         );
         let line_max = self.buffer.lines[new_y as usize].len();
-        let new_x = std::cmp::max(0, std::cmp::min(self.cursor.x as i32 + x, line_max as i32));
+        let new_x = std::cmp::max(0, std::cmp::min(x, line_max));
 
         let new_curs = Point {
             x: new_x as usize,
@@ -95,13 +95,24 @@ impl Editor {
 
         self.cursor = new_curs;
 
+        // Scroll view on Y
         if self.cursor.y > (self.view.pos.y + self.view.size.y - 1) {
             self.view.pos.y = self.cursor.y - self.view.size.y + 1;
         } else if self.cursor.y < self.view.pos.y {
             self.view.pos.y = self.cursor.y;
         }
 
+        // Scroll view on X
+        if self.cursor.x > (self.view.pos.x + self.view.size.x - 1) {
+            self.view.pos.x = self.cursor.x - self.view.size.x + 1;
+        } else if self.cursor.x < self.view.pos.x {
+            self.view.pos.x = self.cursor.x;
+        }
         Ok(true)
+    }
+
+    pub fn offset_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
+        self.set_cursor((self.cursor.x as i32 + x) as usize, (self.cursor.y as i32 + y) as usize)
     }
 
     pub fn on_key_event(&mut self, kevent: KeyEvent) -> Result<()> {
@@ -115,32 +126,45 @@ impl Editor {
             KeyEvent {
                 code: KeyCode::Down,
                 modifiers: event::KeyModifiers::NONE,
-            } => redraw = self.move_cursor(0, 1)?,
+            } => redraw = self.offset_cursor(0, 1)?,
             // Up
             KeyEvent {
                 code: KeyCode::Up,
                 modifiers: event::KeyModifiers::NONE,
-            } => redraw = self.move_cursor(0, -1)?,
+            } => redraw = self.offset_cursor(0, -1)?,
             // PgDown
             KeyEvent {
                 code: KeyCode::PageDown,
                 modifiers: event::KeyModifiers::NONE,
-            } => redraw = self.move_cursor(0, (self.view.size.y as i32)-1)?,
+            } => redraw = self.offset_cursor(0, (self.view.size.y as i32)-1)?,
             // PgUp
             KeyEvent {
                 code: KeyCode::PageUp,
                 modifiers: event::KeyModifiers::NONE,
-            } => redraw = self.move_cursor(0, -(self.view.size.y as i32)-2)?,
+            } => redraw = self.offset_cursor(0, -(self.view.size.y as i32)-2)?,
             // Left
             KeyEvent {
                 code: KeyCode::Left,
                 modifiers: event::KeyModifiers::NONE,
-            } => redraw = self.move_cursor(-1, 0)?,
+            } => redraw = self.offset_cursor(-1, 0)?,
             // Right
             KeyEvent {
                 code: KeyCode::Right,
                 modifiers: event::KeyModifiers::NONE,
-            } => redraw = self.move_cursor(1, 0)?,
+            } => redraw = self.offset_cursor(1, 0)?,
+            // Home
+            KeyEvent {
+                code: KeyCode::Home,
+                modifiers: event::KeyModifiers::NONE,
+            } => redraw = self.set_cursor(0, self.cursor.y)?,
+            // Right
+            KeyEvent {
+                code: KeyCode::End,
+                modifiers: event::KeyModifiers::NONE,
+            } => {
+                let line_max = self.buffer.lines[self.cursor.y].len();
+                redraw = self.set_cursor(line_max, self.cursor.y)?
+            },
             _ => {}
         }
 
@@ -174,6 +198,7 @@ impl Editor {
         // Clear screen
         queue!(
             stdout(),
+            cursor::Hide,
             terminal::Clear(ClearType::All),
             cursor::MoveTo(0, 0)
         )?;
@@ -221,7 +246,8 @@ impl Editor {
             cursor::MoveTo(
                 (self.cursor.x - self.view.pos.x) as u16,
                 (self.cursor.y - self.view.pos.y) as u16
-            )
+            ),
+            cursor::Show
         )?;
         stdout().flush()?;
         Ok(())
