@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 crossterm = "*"
+anyhow = "1.0"
