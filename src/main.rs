@@ -14,7 +14,7 @@ impl Drop for CleanUp {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 struct Point {
     x: usize,
     y: usize,
@@ -46,13 +46,16 @@ impl EditBuffer {
 }
 
 struct Rect {
-    pos : Point,
-    size : Point
+    pos: Point,
+    size: Point,
 }
 
 impl Rect {
-    pub fn new () -> Rect {
-        Rect { pos: Point { x:0, y:0 } , size: Point { x: 0, y: 0 } }
+    pub fn new() -> Rect {
+        Rect {
+            pos: Point { x: 0, y: 0 },
+            size: Point { x: 0, y: 0 },
+        }
     }
 }
 
@@ -67,53 +70,87 @@ impl Editor {
     pub fn new() -> Result<Editor> {
         Ok(Editor {
             exit: false,
-            view : Rect::new(),
+            view: Rect::new(),
             buffer: EditBuffer::new(),
             cursor: Point { x: 0, y: 0 },
         })
     }
 
+    pub fn move_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
+        let new_y = std::cmp::max(
+            0,
+            std::cmp::min(self.cursor.y as i32 + y, self.buffer.num_lines() as i32 -1),
+        );
+        let line_max = self.buffer.lines[new_y as usize].len();
+        let new_x = std::cmp::max(0, std::cmp::min(self.cursor.x as i32 + x, line_max as i32));
+
+        let new_curs = Point {
+            x: new_x as usize,
+            y: new_y as usize,
+        };
+
+        if self.cursor == new_curs {
+            return Ok(false);
+        }
+
+        self.cursor = new_curs;
+
+        if self.cursor.y > (self.view.pos.y + self.view.size.y - 1) {
+            self.view.pos.y = self.cursor.y - self.view.size.y + 1;
+        } else if self.cursor.y < self.view.pos.y {
+            self.view.pos.y = self.cursor.y;
+        }
+
+        Ok(true)
+    }
+
     pub fn on_key_event(&mut self, kevent: KeyEvent) -> Result<()> {
         let mut redraw = false;
-        let mut new_cursor = self.cursor;
         match kevent {
             KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: event::KeyModifiers::CONTROL,
             } => self.exit = true,
+            // Down
             KeyEvent {
                 code: KeyCode::Down,
                 modifiers: event::KeyModifiers::NONE,
-            } => {
-                if self.cursor.y < self.buffer.num_lines() {
-                    self.cursor.y = self.cursor.y + 1;
-                    redraw = true;
-                }
-            }
+            } => redraw = self.move_cursor(0, 1)?,
+            // Up
             KeyEvent {
                 code: KeyCode::Up,
                 modifiers: event::KeyModifiers::NONE,
-            } => {
-                if self.cursor.y > 0 {
-                    self.cursor.y = self.cursor.y - 1;
-                    redraw = true;
-                }
-            }
+            } => redraw = self.move_cursor(0, -1)?,
+            // PgDown
+            KeyEvent {
+                code: KeyCode::PageDown,
+                modifiers: event::KeyModifiers::NONE,
+            } => redraw = self.move_cursor(0, (self.view.size.y as i32)-1)?,
+            // PgUp
+            KeyEvent {
+                code: KeyCode::PageUp,
+                modifiers: event::KeyModifiers::NONE,
+            } => redraw = self.move_cursor(0, -(self.view.size.y as i32)-2)?,
+            // Left
+            KeyEvent {
+                code: KeyCode::Left,
+                modifiers: event::KeyModifiers::NONE,
+            } => redraw = self.move_cursor(-1, 0)?,
+            // Right
+            KeyEvent {
+                code: KeyCode::Right,
+                modifiers: event::KeyModifiers::NONE,
+            } => redraw = self.move_cursor(1, 0)?,
             _ => {}
         }
 
-        if self.cursor.y > (self.view.pos.y + self.view.size.y - 1) {
-            self.view.pos.y = self.cursor.y - self.view.size.y + 1;
-        } else if self.cursor.y < self.view.pos.y  {
-            self.view.pos.y = self.cursor.y;
-        }
-
         if redraw {
-            self.draw()?
+            self.redraw()?
         }
 
         Ok(())
     }
+
     pub fn on_idle(&mut self) {
         //  println!("No input yet\r");
     }
@@ -121,21 +158,25 @@ impl Editor {
     pub fn on_resize(&mut self, new_width: usize, new_height: usize) -> Result<()> {
         self.view.size.x = new_width;
         self.view.size.y = new_height;
-        self.draw()?;
+        self.redraw()?;
         Ok(())
     }
 
-//    fn buffer_to_view(&self, bufferPoint : Point) -> (i32, i32) {
- //       i32 x = self
-  //  }
+    //    fn buffer_to_view(&self, bufferPoint : Point) -> (i32, i32) {
+    //       i32 x = self
+    //  }
 
-//    fn 
+    //    fn
 
-    fn draw(&self) -> Result<()> {
+    fn redraw(&self) -> Result<()> {
         let mut out = String::new();
 
         // Clear screen
-        queue!(stdout(), terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))?;        
+        queue!(
+            stdout(),
+            terminal::Clear(ClearType::All),
+            cursor::MoveTo(0, 0)
+        )?;
 
         for y in 0..self.view.size.y {
             let buffer_y = self.view.pos.y + y;
@@ -145,7 +186,7 @@ impl Editor {
                 String::new()
             };
 
-            for x in 0..self.view.size.x{
+            for x in 0..self.view.size.x {
                 let buffer_x = self.view.pos.x + x;
                 let outc = if buffer_x < bline.len() {
                     bline.chars().nth(buffer_x).unwrap()
@@ -162,16 +203,26 @@ impl Editor {
         // Draw status
         //queue!(stdout(), cursor::MoveTo(0, (self.view.size.y - 1) as u16))?;
         //write!(stdout(), "Status bar")?;
-       
+
         queue!(stdout(), cursor::MoveTo(0, 0))?;
-        write!(stdout(), "Pos({},{}) View({},{}) Size({},{})", 
-            self.cursor.x, self.cursor.y,
-            self.view.pos.x, self.view.pos.y,
-            self.view.size.x, self.view.size.y
+        write!(
+            stdout(),
+            "Pos({},{}) View({},{}) Size({},{})",
+            self.cursor.x,
+            self.cursor.y,
+            self.view.pos.x,
+            self.view.pos.y,
+            self.view.size.x,
+            self.view.size.y
         )?;
-       
-        
-        queue!(stdout(), cursor::MoveTo((self.cursor.x - self.view.pos.x) as u16, (self.cursor.y - self.view.pos.y) as u16))?;
+
+        queue!(
+            stdout(),
+            cursor::MoveTo(
+                (self.cursor.x - self.view.pos.x) as u16,
+                (self.cursor.y - self.view.pos.y) as u16
+            )
+        )?;
         stdout().flush()?;
         Ok(())
     }
