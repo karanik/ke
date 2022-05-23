@@ -4,7 +4,7 @@ use crossterm::terminal::ClearType;
 use crossterm::{cursor, event, queue, terminal};
 use std::io::prelude::*;
 use std::io::stdout;
-use std::str::{FromStr};
+use std::str::FromStr;
 use std::time::Duration;
 
 struct CleanUp;
@@ -82,7 +82,6 @@ impl Editor {
             std::cmp::min(y, self.buffer.num_lines() -1),
         );
         let line_max = self.buffer.lines[new_y as usize].chars().count();
-//        let line_max = line.chars().count();
         let new_x = std::cmp::max(0, std::cmp::min(x, line_max));
 
         let new_curs = Point {
@@ -243,21 +242,22 @@ impl Editor {
             }
         }
 
-        write!(stdout(), "{}", out)?;
+        queue!(stdout(), crossterm::style::Print(out))?;
         // Draw status
         //queue!(stdout(), cursor::MoveTo(0, (self.view.size.y - 1) as u16))?;
         //write!(stdout(), "Status bar")?;
 
         queue!(stdout(), cursor::MoveTo(0, 0))?;
-        write!(
+        queue!(
             stdout(),
+            crossterm::style::Print(format!(
             "Pos({},{}) View({},{}) Size({},{})",
             self.cursor.x,
             self.cursor.y,
             self.view.pos.x,
             self.view.pos.y,
             self.view.size.x,
-            self.view.size.y
+            self.view.size.y))
         )?;
 
         queue!(
@@ -274,9 +274,6 @@ impl Editor {
 
     pub fn run_loop(&mut self) -> Result<()> {
         let new_size = crossterm::terminal::size()?;
-        //println!("{:?}\r", new_size);
-        //return Ok(());
-
         self.on_resize(new_size.0 as usize, new_size.1 as usize)?;
         loop {
             if !event::poll(Duration::from_millis(500))? {
@@ -306,11 +303,12 @@ impl Editor {
 
 fn main() -> anyhow::Result<()> {
     let _clean_up = CleanUp;
-    terminal::enable_raw_mode()?; /* modify */
+    terminal::enable_raw_mode()?;
     let mut editor = Editor::new()?;
     editor
         .buffer
-        .load("/Users/kostas/rs/github/rstenduke/src/tenduke.rs")?;
+        .load("C:/rs/github/RedshiftC4D/SourceCode/Plugin_C4D/source/AOV.cpp")?;
+
     editor.run_loop()?;
     Ok(())
 }
