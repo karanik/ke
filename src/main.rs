@@ -1,10 +1,10 @@
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use crossterm::terminal::ClearType;
-use crossterm::{cursor, event, execute, queue, terminal};
+use crossterm::{cursor, event, queue, terminal};
 use std::io::prelude::*;
 use std::io::stdout;
-use std::str::FromStr;
+use std::str::{FromStr};
 use std::time::Duration;
 
 struct CleanUp;
@@ -81,7 +81,8 @@ impl Editor {
             0,
             std::cmp::min(y, self.buffer.num_lines() -1),
         );
-        let line_max = self.buffer.lines[new_y as usize].len();
+        let line_max = self.buffer.lines[new_y as usize].chars().count();
+//        let line_max = line.chars().count();
         let new_x = std::cmp::max(0, std::cmp::min(x, line_max));
 
         let new_curs = Point {
@@ -113,6 +114,20 @@ impl Editor {
 
     pub fn offset_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
         self.set_cursor((self.cursor.x as i32 + x) as usize, (self.cursor.y as i32 + y) as usize)
+    }
+
+    fn insert_char(&mut self, ch: char) {
+        assert!(self.cursor.y < self.buffer.lines.len());
+        let line = &mut self.buffer.lines[self.cursor.y];
+
+        let idx =  line.char_indices().nth(self.cursor.x);
+        if idx.is_none() {
+            return;
+        }
+        let idx = idx.unwrap();
+        line.insert(idx.0, ch);        
+        self.cursor.x += 1;
+        self.redraw().unwrap();
     }
 
     pub fn on_key_event(&mut self, kevent: KeyEvent) -> Result<()> {
@@ -165,6 +180,14 @@ impl Editor {
                 let line_max = self.buffer.lines[self.cursor.y].len();
                 redraw = self.set_cursor(line_max, self.cursor.y)?
             },
+            KeyEvent {
+                code: code @ (KeyCode::Char(..) | KeyCode::Tab),
+                modifiers: event::KeyModifiers::NONE | event::KeyModifiers::SHIFT,
+            } => self.insert_char(match code {
+                KeyCode::Tab => '\t',
+                KeyCode::Char(ch) => ch,
+                _ => unreachable!(),
+            }),
             _ => {}
         }
 
@@ -186,12 +209,6 @@ impl Editor {
         Ok(())
     }
 
-    //    fn buffer_to_view(&self, bufferPoint : Point) -> (i32, i32) {
-    //       i32 x = self
-    //  }
-
-    //    fn
-
     fn redraw(&self) -> Result<()> {
         let mut out = String::new();
 
@@ -211,9 +228,11 @@ impl Editor {
                 String::new()
             };
 
+            let line_char_count = bline.chars().count();
+
             for x in 0..self.view.size.x {
                 let buffer_x = self.view.pos.x + x;
-                let outc = if buffer_x < bline.len() {
+                let outc = if buffer_x <line_char_count {
                     bline.chars().nth(buffer_x).unwrap()
                 } else {
                     ' '
