@@ -22,27 +22,45 @@ struct Point {
 
 struct EditBuffer {
     lines: Vec<String>,
+    file_path : String,
 }
 
 impl EditBuffer {
     pub fn new() -> EditBuffer {
-        EditBuffer { lines: Vec::new() }
-    }
-    pub fn load(&mut self, path: &str) -> Result<()> {
-        self.lines.clear();
-        let mut f = std::fs::File::open(path)?;
-        let mut buffer = String::new();
-        f.read_to_string(&mut buffer)?;
-        for line in buffer.split('\n') {
-            let s = String::from_str(line)?;
-            self.lines.push(s);
+        EditBuffer { 
+            lines: Vec::new(),
+            file_path : String::new()
         }
+    }
+    pub fn load(&mut self, path: &String) -> Result<()> {
+        self.lines.clear();
+
+        //let mut ferr = std::fs::File::open(path);
+
+        match std::fs::File::open(path) {
+            Ok(mut f) => {
+                let mut buffer = String::new();
+                f.read_to_string(&mut buffer)?;
+                for line in buffer.split('\n') {
+                    let s = String::from_str(line)?;
+                    self.lines.push(s);
+                }        
+            }
+            Err(err) => eprintln!("error: {}", err),
+        }
+
+        self.file_path = path.clone();
         Ok(())
     }
 
     pub fn num_lines(&self) -> usize {
         self.lines.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.lines.len()==0
+    }
+
 }
 
 struct Rect {
@@ -57,6 +75,10 @@ impl Rect {
             size: Point { x: 0, y: 0 },
         }
     }
+}
+
+fn clamp<T : Ord>(v : T, min : T,  max : T) -> T {
+    std::cmp::max(min, std::cmp::min(max, v))
 }
 
 struct Editor {
@@ -77,12 +99,11 @@ impl Editor {
     }
 
     pub fn set_cursor(&mut self, x: usize, y: usize) -> Result<bool> {
-        let new_y = std::cmp::max(
-            0,
-            std::cmp::min(y, self.buffer.num_lines() -1),
-        );
-        let line_max = self.buffer.lines[new_y as usize].chars().count();
-        let new_x = std::cmp::max(0, std::cmp::min(x, line_max));
+        let max_y = if self.buffer.is_empty() { 0 } else { self.buffer.num_lines()-1 };
+        let new_y = clamp(y, 0, max_y);
+
+        let line_max = if self.buffer.is_empty() { 0 } else { self.buffer.lines[new_y as usize].chars().count() };
+        let new_x = clamp(x, 0, line_max);
 
         let new_curs = Point {
             x: new_x as usize,
@@ -112,19 +133,26 @@ impl Editor {
     }
 
     pub fn offset_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
-        self.set_cursor((self.cursor.x as i32 + x) as usize, (self.cursor.y as i32 + y) as usize)
+        let new_y = clamp(self.cursor.y as i32 + y, 0, (self.buffer.num_lines() as i32)-1);
+        let line_max = if self.buffer.is_empty() { 0 } else { self.buffer.lines[new_y as usize].chars().count() };
+        let new_x = clamp(self.cursor.x as i32 + x, 0, line_max as i32);
+        self.set_cursor(new_x as usize, new_y as usize)
     }
 
     fn insert_char(&mut self, ch: char) {
-        assert!(self.cursor.y < self.buffer.lines.len());
-        let line = &mut self.buffer.lines[self.cursor.y];
+        if self.buffer.lines.is_empty() {
+            self.buffer.lines.push(ch.to_string())
+        } else {
+            assert!(self.cursor.y < self.buffer.lines.len());
+            let line = &mut self.buffer.lines[self.cursor.y];
 
-        let idx =  line.char_indices().nth(self.cursor.x);
-        if idx.is_none() {
-            return;
+            let idx =  line.char_indices().nth(self.cursor.x);
+            if idx.is_none() {
+                return;
+            }
+            let idx = idx.unwrap();
+            line.insert(idx.0, ch);        
         }
-        let idx = idx.unwrap();
-        line.insert(idx.0, ch);        
         self.cursor.x += 1;
         self.redraw().unwrap();
     }
@@ -184,6 +212,7 @@ impl Editor {
                 modifiers: event::KeyModifiers::NONE | event::KeyModifiers::SHIFT,
             } => self.insert_char(match code {
                 KeyCode::Tab => '\t',
+                KeyCode::Enter => '\n',
                 KeyCode::Char(ch) => ch,
                 _ => unreachable!(),
             }),
@@ -251,13 +280,15 @@ impl Editor {
         queue!(
             stdout(),
             crossterm::style::Print(format!(
-            "Pos({},{}) View({},{}) Size({},{})",
+            "Pos({},{}) View({},{}) Size({},{}) | {}",
             self.cursor.x,
             self.cursor.y,
             self.view.pos.x,
             self.view.pos.y,
             self.view.size.x,
-            self.view.size.y))
+            self.view.size.y,
+            if self.buffer.file_path.is_empty() { "Untitled" } else { &self.buffer.file_path.as_str() }
+            ))
         )?;
 
         queue!(
@@ -305,10 +336,11 @@ fn main() -> anyhow::Result<()> {
     let _clean_up = CleanUp;
     terminal::enable_raw_mode()?;
     let mut editor = Editor::new()?;
-    editor
-        .buffer
-        .load("C:/rs/github/RedshiftC4D/SourceCode/Plugin_C4D/source/AOV.cpp")?;
 
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+       editor.buffer.load(&args[1])?;
+    }
     editor.run_loop()?;
     Ok(())
 }
