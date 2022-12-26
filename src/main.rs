@@ -139,7 +139,7 @@ impl Editor {
         Ok(true)
     }
 
-    pub fn offset_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
+    pub fn  offset_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
         let new_y = clamp(
             self.cursor.y as i32 + y,
             0,
@@ -170,6 +170,49 @@ impl Editor {
             }
         }
         self.cursor.x += 1;
+        self.redraw().unwrap();
+    }
+
+    fn key_enter(&mut self) {
+        let mut line = String::new();
+        if !self.buffer.lines.is_empty() {
+            line = self.buffer.lines[self.cursor.y].clone();
+        }
+        let (left, right) = line.split_at(self.cursor.x);
+
+        if self.buffer.lines.is_empty() {
+            self.buffer.lines.push(left.to_string());
+            self.buffer.lines.push(right.to_string());
+        } else {
+            self.buffer.lines[self.cursor.y] = left.to_string();
+            self.buffer
+                .lines
+                .insert(self.cursor.y + 1, right.to_string());
+        }
+        self.cursor.y += 1;
+        self.cursor.x = 0;
+        self.redraw().unwrap();
+    }
+
+    fn key_backspace(&mut self) {
+        if self.cursor.x == 0 && self.cursor.y == 0 {
+            return;
+        }
+
+        // First char of line? Merge with previous
+        if self.cursor.x == 0 {
+            let curr_line = self.buffer.lines[self.cursor.y].clone();
+            let prev_line = &mut self.buffer.lines[self.cursor.y-1];
+            let old_len = prev_line.len();
+            prev_line.push_str(curr_line.as_str());
+            self.buffer.lines.remove(self.cursor.y);
+            self.cursor.y -= 1;
+            self.cursor.x = old_len;
+        } else {
+            let curr_line = &mut self.buffer.lines[self.cursor.y];
+            curr_line.remove(self.cursor.x-1);
+            self.cursor.x -= 1;
+        } 
         self.redraw().unwrap();
     }
 
@@ -227,26 +270,12 @@ impl Editor {
             KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: event::KeyModifiers::NONE,
-            } => {
-                let mut line = String::new();
-                if !self.buffer.lines.is_empty() {
-                    line = self.buffer.lines[self.cursor.y].clone();
-                }
-                let (left, right) = line.split_at(self.cursor.x);
-
-                if self.buffer.lines.is_empty() {
-                    self.buffer.lines.push(left.to_string());
-                    self.buffer.lines.push(right.to_string());
-                } else {
-                    self.buffer.lines[self.cursor.y] = left.to_string();
-                    self.buffer
-                        .lines
-                        .insert(self.cursor.y + 1, right.to_string());
-                }
-                self.cursor.y += 1;
-                self.cursor.x = 0;
-                redraw = true;
-            }
+            } => self.key_enter(),
+            // Backspace
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: event::KeyModifiers::NONE,
+            } => self.key_backspace(),
             KeyEvent {
                 code: code @ (KeyCode::Char(..) | KeyCode::Tab),
                 modifiers: event::KeyModifiers::NONE | event::KeyModifiers::SHIFT,
