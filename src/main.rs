@@ -22,14 +22,14 @@ struct Point {
 
 struct EditBuffer {
     lines: Vec<String>,
-    file_path : String,
+    file_path: String,
 }
 
 impl EditBuffer {
     pub fn new() -> EditBuffer {
-        EditBuffer { 
+        EditBuffer {
             lines: Vec::new(),
-            file_path : String::new()
+            file_path: String::new(),
         }
     }
     pub fn load(&mut self, path: &String) -> Result<()> {
@@ -44,7 +44,7 @@ impl EditBuffer {
                 for line in buffer.split('\n') {
                     let s = String::from_str(line)?;
                     self.lines.push(s);
-                }        
+                }
             }
             Err(err) => eprintln!("error: {}", err),
         }
@@ -58,9 +58,8 @@ impl EditBuffer {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.lines.len()==0
+        self.lines.len() == 0
     }
-
 }
 
 struct Rect {
@@ -77,7 +76,7 @@ impl Rect {
     }
 }
 
-fn clamp<T : Ord>(v : T, min : T,  max : T) -> T {
+fn clamp<T: Ord>(v: T, min: T, max: T) -> T {
     std::cmp::max(min, std::cmp::min(max, v))
 }
 
@@ -99,10 +98,18 @@ impl Editor {
     }
 
     pub fn set_cursor(&mut self, x: usize, y: usize) -> Result<bool> {
-        let max_y = if self.buffer.is_empty() { 0 } else { self.buffer.num_lines()-1 };
+        let max_y = if self.buffer.is_empty() {
+            0
+        } else {
+            self.buffer.num_lines() - 1
+        };
         let new_y = clamp(y, 0, max_y);
 
-        let line_max = if self.buffer.is_empty() { 0 } else { self.buffer.lines[new_y as usize].chars().count() };
+        let line_max = if self.buffer.is_empty() {
+            0
+        } else {
+            self.buffer.lines[new_y as usize].chars().count()
+        };
         let new_x = clamp(x, 0, line_max);
 
         let new_curs = Point {
@@ -133,8 +140,16 @@ impl Editor {
     }
 
     pub fn offset_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
-        let new_y = clamp(self.cursor.y as i32 + y, 0, (self.buffer.num_lines() as i32)-1);
-        let line_max = if self.buffer.is_empty() { 0 } else { self.buffer.lines[new_y as usize].chars().count() };
+        let new_y = clamp(
+            self.cursor.y as i32 + y,
+            0,
+            (self.buffer.num_lines() as i32) - 1,
+        );
+        let line_max = if self.buffer.is_empty() {
+            0
+        } else {
+            self.buffer.lines[new_y as usize].chars().count()
+        };
         let new_x = clamp(self.cursor.x as i32 + x, 0, line_max as i32);
         self.set_cursor(new_x as usize, new_y as usize)
     }
@@ -144,14 +159,15 @@ impl Editor {
             self.buffer.lines.push(ch.to_string())
         } else {
             assert!(self.cursor.y < self.buffer.lines.len());
-            let line = &mut self.buffer.lines[self.cursor.y];
 
-            let idx =  line.char_indices().nth(self.cursor.x);
+            let line = &mut self.buffer.lines[self.cursor.y];
+            let idx = line.char_indices().nth(self.cursor.x);
             if idx.is_none() {
-                return;
+                line.push(ch);
+            } else {
+                let idx = idx.unwrap();
+                line.insert(idx.0, ch);
             }
-            let idx = idx.unwrap();
-            line.insert(idx.0, ch);        
         }
         self.cursor.x += 1;
         self.redraw().unwrap();
@@ -178,12 +194,12 @@ impl Editor {
             KeyEvent {
                 code: KeyCode::PageDown,
                 modifiers: event::KeyModifiers::NONE,
-            } => redraw = self.offset_cursor(0, (self.view.size.y as i32)-1)?,
+            } => redraw = self.offset_cursor(0, (self.view.size.y as i32) - 1)?,
             // PgUp
             KeyEvent {
                 code: KeyCode::PageUp,
                 modifiers: event::KeyModifiers::NONE,
-            } => redraw = self.offset_cursor(0, -(self.view.size.y as i32)-2)?,
+            } => redraw = self.offset_cursor(0, -(self.view.size.y as i32) - 2)?,
             // Left
             KeyEvent {
                 code: KeyCode::Left,
@@ -206,7 +222,31 @@ impl Editor {
             } => {
                 let line_max = self.buffer.lines[self.cursor.y].len();
                 redraw = self.set_cursor(line_max, self.cursor.y)?
-            },
+            }
+            // Enter
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: event::KeyModifiers::NONE,
+            } => {
+                let mut line = String::new();
+                if !self.buffer.lines.is_empty() {
+                    line = self.buffer.lines[self.cursor.y].clone();
+                }
+                let (left, right) = line.split_at(self.cursor.x);
+
+                if self.buffer.lines.is_empty() {
+                    self.buffer.lines.push(left.to_string());
+                    self.buffer.lines.push(right.to_string());
+                } else {
+                    self.buffer.lines[self.cursor.y] = left.to_string();
+                    self.buffer
+                        .lines
+                        .insert(self.cursor.y + 1, right.to_string());
+                }
+                self.cursor.y += 1;
+                self.cursor.x = 0;
+                redraw = true;
+            }
             KeyEvent {
                 code: code @ (KeyCode::Char(..) | KeyCode::Tab),
                 modifiers: event::KeyModifiers::NONE | event::KeyModifiers::SHIFT,
@@ -260,7 +300,7 @@ impl Editor {
 
             for x in 0..self.view.size.x {
                 let buffer_x = self.view.pos.x + x;
-                let outc = if buffer_x <line_char_count {
+                let outc = if buffer_x < line_char_count {
                     bline.chars().nth(buffer_x).unwrap()
                 } else {
                     ' '
@@ -280,14 +320,18 @@ impl Editor {
         queue!(
             stdout(),
             crossterm::style::Print(format!(
-            "Pos({},{}) View({},{}) Size({},{}) | {}",
-            self.cursor.x,
-            self.cursor.y,
-            self.view.pos.x,
-            self.view.pos.y,
-            self.view.size.x,
-            self.view.size.y,
-            if self.buffer.file_path.is_empty() { "Untitled" } else { &self.buffer.file_path.as_str() }
+                "Pos({},{}) View({},{}) Size({},{}) | {}",
+                self.cursor.x,
+                self.cursor.y,
+                self.view.pos.x,
+                self.view.pos.y,
+                self.view.size.x,
+                self.view.size.y,
+                if self.buffer.file_path.is_empty() {
+                    "Untitled"
+                } else {
+                    &self.buffer.file_path.as_str()
+                }
             ))
         )?;
 
@@ -339,7 +383,7 @@ fn main() -> anyhow::Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
-       editor.buffer.load(&args[1])?;
+        editor.buffer.load(&args[1])?;
     }
     editor.run_loop()?;
     Ok(())
