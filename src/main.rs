@@ -139,7 +139,7 @@ impl Editor {
         Ok(true)
     }
 
-    pub fn  offset_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
+    pub fn offset_cursor(&mut self, x: i32, y: i32) -> Result<bool> {
         let new_y = clamp(
             self.cursor.y as i32 + y,
             0,
@@ -202,7 +202,7 @@ impl Editor {
         // First char of line? Merge with previous
         if self.cursor.x == 0 {
             let curr_line = self.buffer.lines[self.cursor.y].clone();
-            let prev_line = &mut self.buffer.lines[self.cursor.y-1];
+            let prev_line = &mut self.buffer.lines[self.cursor.y - 1];
             let old_len = prev_line.len();
             prev_line.push_str(curr_line.as_str());
             self.buffer.lines.remove(self.cursor.y);
@@ -210,9 +210,34 @@ impl Editor {
             self.cursor.x = old_len;
         } else {
             let curr_line = &mut self.buffer.lines[self.cursor.y];
-            curr_line.remove(self.cursor.x-1);
+            curr_line.remove(self.cursor.x - 1);
             self.cursor.x -= 1;
-        } 
+        }
+        self.redraw().unwrap();
+    }
+
+    fn key_delete(&mut self) {
+        if self.buffer.is_empty() {
+            return;
+        }
+        if self.cursor.y == self.buffer.lines.len() - 1
+            && self.cursor.x == self.buffer.lines.last().unwrap().len()
+        {
+            return;
+        }
+
+        let line_len = self.buffer.lines[self.cursor.y].len();
+
+        // Last char of line? Merge with next
+        if self.cursor.x == line_len {
+            let next_line = self.buffer.lines[self.cursor.y + 1].clone();
+            let curr_line = &mut self.buffer.lines[self.cursor.y];
+            curr_line.push_str(next_line.as_str());
+            self.buffer.lines.remove(self.cursor.y + 1);
+        } else {
+            let curr_line = &mut self.buffer.lines[self.cursor.y];
+            curr_line.remove(self.cursor.x);
+        }
         self.redraw().unwrap();
     }
 
@@ -276,6 +301,11 @@ impl Editor {
                 code: KeyCode::Backspace,
                 modifiers: event::KeyModifiers::NONE,
             } => self.key_backspace(),
+            // Delete
+            KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: event::KeyModifiers::NONE,
+            } => self.key_delete(),
             KeyEvent {
                 code: code @ (KeyCode::Char(..) | KeyCode::Tab),
                 modifiers: event::KeyModifiers::NONE | event::KeyModifiers::SHIFT,
