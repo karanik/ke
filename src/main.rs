@@ -214,6 +214,11 @@ impl Editor {
             let old_len = prev_line.len();
             prev_line.push_str(curr_line.as_str());
             self.buffer.lines.remove(self.cursor.y);
+            // First line of the current view?
+            if self.cursor.y == self.view.pos.y {
+                // Offset view
+                self.view.pos.y -= 1;
+            }
             self.cursor.y -= 1;
             self.cursor.x = old_len;
         } else {
