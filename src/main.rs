@@ -170,7 +170,7 @@ impl Editor {
             }
         }
         self.cursor.x += 1;
-        self.redraw().unwrap();
+        self.redraw(false).unwrap();
     }
 
     fn key_enter(&mut self) {
@@ -189,9 +189,17 @@ impl Editor {
                 .lines
                 .insert(self.cursor.y + 1, right.to_string());
         }
+
+        // At last line in the current view?
+        if self.cursor.y == (self.view.pos.y + self.view.size.y) {
+            // Offset view
+            self.view.pos.y += 1;
+        }
+
         self.cursor.y += 1;
         self.cursor.x = 0;
-        self.redraw().unwrap();
+
+        self.redraw(false).unwrap();
     }
 
     fn key_backspace(&mut self) {
@@ -213,7 +221,7 @@ impl Editor {
             curr_line.remove(self.cursor.x - 1);
             self.cursor.x -= 1;
         }
-        self.redraw().unwrap();
+        self.redraw(false).unwrap();
     }
 
     fn key_delete(&mut self) {
@@ -238,7 +246,7 @@ impl Editor {
             let curr_line = &mut self.buffer.lines[self.cursor.y];
             curr_line.remove(self.cursor.x);
         }
-        self.redraw().unwrap();
+        self.redraw(false).unwrap();
     }
 
     pub fn on_key_event(&mut self, kevent: KeyEvent) -> Result<()> {
@@ -319,7 +327,7 @@ impl Editor {
         }
 
         if redraw {
-            self.redraw()?
+            self.redraw(false)?
         }
 
         Ok(())
@@ -332,20 +340,24 @@ impl Editor {
     pub fn on_resize(&mut self, new_width: usize, new_height: usize) -> Result<()> {
         self.view.size.x = new_width;
         self.view.size.y = new_height;
-        self.redraw()?;
+        self.redraw(true)?;
         Ok(())
     }
 
-    fn redraw(&self) -> Result<()> {
+    fn redraw(&self, clear: bool) -> Result<()> {
         let mut out = String::new();
 
         // Clear screen
-        queue!(
-            stdout(),
-            cursor::Hide,
-            terminal::Clear(ClearType::All),
-            cursor::MoveTo(0, 0)
-        )?;
+        if clear {
+            queue!(
+                stdout(),
+                cursor::Hide,
+                terminal::Clear(ClearType::All),
+                cursor::MoveTo(0, 0)
+            )?;
+        } else {
+            queue!(stdout(), cursor::Hide, cursor::MoveTo(0, 0))?;
+        }
 
         for y in 0..self.view.size.y {
             let buffer_y = self.view.pos.y + y;
@@ -407,8 +419,8 @@ impl Editor {
     }
 
     pub fn run_loop(&mut self) -> Result<()> {
-        let new_size = crossterm::terminal::size()?;
-        self.on_resize(new_size.0 as usize, new_size.1 as usize)?;
+        let (new_width, new_height) = crossterm::terminal::size()?;
+        self.on_resize(new_width as usize, new_height as usize)?;
         loop {
             if !event::poll(Duration::from_millis(500))? {
                 self.on_idle()
@@ -418,8 +430,10 @@ impl Editor {
                     Event::Key(kevent) => {
                         self.on_key_event(kevent)?;
                     }
-                    Event::Resize(x, y) => {
-                        self.on_resize(x as usize, y as usize)?;
+                    Event::Resize(_x, _y) => {
+                        // On Windows x, and y are off-by-one for some reason, so use the size() call instead
+                        let (new_width, new_height) = crossterm::terminal::size()?;
+                        self.on_resize(new_width as usize, new_height as usize)?;
                     }
                     _ => {}
                 };
