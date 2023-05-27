@@ -169,7 +169,14 @@ impl Editor {
                 line.insert(idx.0, ch);
             }
         }
+
         self.cursor.x += 1;
+        let visible_width = self.view.pos.x + self.view.size.x - 1;
+        if self.cursor.x == visible_width {
+            // Offset view
+            self.view.pos.x += 1;
+        }
+
         self.redraw(false).unwrap();
     }
 
@@ -190,8 +197,10 @@ impl Editor {
                 .insert(self.cursor.y + 1, right.to_string());
         }
 
-        // At last line in the current view?
-        if self.cursor.y == (self.view.pos.y + self.view.size.y) {
+        // Exclude status bar at last line of view
+        let visible_height = self.view.pos.y + self.view.size.y - 2;
+        // At last line in the current view? 
+        if self.cursor.y == visible_height {
             // Offset view
             self.view.pos.y += 1;
         }
@@ -349,6 +358,25 @@ impl Editor {
         Ok(())
     }
 
+    fn get_status(&self) -> String {
+        let s = format!(
+            "Pos({},{}) View({},{}) Size({},{}) | {}",
+            self.cursor.x,
+            self.cursor.y,
+            self.view.pos.x,
+            self.view.pos.y,
+            self.view.size.x,
+            self.view.size.y,
+            if self.buffer.file_path.is_empty() {
+                "Untitled"
+            } else {
+                &self.buffer.file_path.as_str()
+            });
+        
+        let clamped = std::cmp::min(s.len(), self.view.size.x);
+        s[..clamped].to_string()
+    }
+
     fn redraw(&self, clear: bool) -> Result<()> {
         let mut out = String::new();
 
@@ -364,52 +392,35 @@ impl Editor {
             queue!(stdout(), cursor::Hide, cursor::MoveTo(0, 0))?;
         }
 
-        for y in 0..self.view.size.y {
-            let buffer_y = self.view.pos.y + y;
-            let bline = if buffer_y < self.buffer.num_lines() {
-                self.buffer.lines[buffer_y].clone()
-            } else {
-                String::new()
-            };
-
-            let line_char_count = bline.chars().count();
-
-            for x in 0..self.view.size.x {
-                let buffer_x = self.view.pos.x + x;
-                let outc = if buffer_x < line_char_count {
-                    bline.chars().nth(buffer_x).unwrap()
+        if self.view.size.y > 0 {
+            for y in 0..self.view.size.y {
+                let buffer_y = self.view.pos.y + y;
+                let bline = if buffer_y < self.buffer.num_lines() {
+                    self.buffer.lines[buffer_y].clone()
                 } else {
-                    ' '
+                    String::new()
                 };
-                //execute!(stdout(), cursor::MoveTo(x as u16, y as u16))?;
-                //print!("{}", outc);
-                out.push(outc);
-            }
-        }
 
-        queue!(stdout(), crossterm::style::Print(out))?;
-        // Draw status
-        //queue!(stdout(), cursor::MoveTo(0, (self.view.size.y - 1) as u16))?;
-        //write!(stdout(), "Status bar")?;
+                let line_char_count = bline.chars().count();
 
-        queue!(stdout(), cursor::MoveTo(0, 0))?;
-        queue!(
-            stdout(),
-            crossterm::style::Print(format!(
-                "Pos({},{}) View({},{}) Size({},{}) | {}",
-                self.cursor.x,
-                self.cursor.y,
-                self.view.pos.x,
-                self.view.pos.y,
-                self.view.size.x,
-                self.view.size.y,
-                if self.buffer.file_path.is_empty() {
-                    "Untitled"
-                } else {
-                    &self.buffer.file_path.as_str()
+                for x in 0..self.view.size.x {
+                    let buffer_x = self.view.pos.x + x;
+                    let outc = if buffer_x < line_char_count {
+                        bline.chars().nth(buffer_x).unwrap()
+                    } else {
+                        ' '
+                    };
+                    //execute!(stdout(), cursor::MoveTo(x as u16, y as u16))?;
+                    //print!("{}", outc);
+                    out.push(outc);
                 }
-            ))
-        )?;
+            }
+
+            queue!(stdout(), crossterm::style::Print(out))?;
+            // Draw status
+            queue!(stdout(), cursor::MoveTo(0, self.view.size.y as u16))?;
+            queue!(stdout(), crossterm::style::Print(self.get_status()))?;
+        }
 
         queue!(
             stdout(),
